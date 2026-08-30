@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="每日盤後更新的台股量化訊號儀表板">
-  <title>開盤密碼｜台股量化雷達</title>
+  <meta name="description" content="六條件加大盤 Gate 的每日盤後台股量化雷達">
+  <title>開盤密碼｜台股六條件量化雷達</title>
   <style>
     :root{--ink:#151a17;--muted:#68716b;--paper:#f3f0e8;--panel:#fffdf7;--line:#d9d4c8;--red:#c53b2f;--green:#08785b;--amber:#a56310;--shadow:0 14px 40px rgba(31,38,33,.08)}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background-image:radial-gradient(#cbc5b7 0.7px,transparent .7px);background-size:8px 8px}
@@ -12,9 +12,9 @@
     .mast{position:relative;overflow:hidden;display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;padding:30px;border:1px solid #232923;border-radius:2px;color:#f8f3e9;background:#18211c;box-shadow:var(--shadow)}
     .mast:after{content:"MARKET / AFTER HOURS";position:absolute;right:-14px;top:16px;color:#ffffff12;font:900 56px/1 Georgia,serif;letter-spacing:-2px;white-space:nowrap}.eyebrow{margin:0 0 10px;color:#a9cf9e;font-size:12px;font-weight:800;letter-spacing:.18em}.mast h1{position:relative;margin:0;font:700 clamp(32px,5vw,64px)/.95 Georgia,"Noto Serif TC",serif;letter-spacing:-.04em}.mast p{margin:14px 0 0;color:#bdc7c0;font-size:14px}.actions{position:relative;z-index:1;text-align:right}.reload{border:1px solid #e8deca;background:#e8deca;color:#18211c;padding:11px 18px;font-weight:900;transition:.2s}.reload:hover{transform:translateY(-2px);background:#fff}.reload:disabled{opacity:.65;cursor:wait}.loadmsg{min-height:18px;margin-top:8px;color:#aeb9b1;font-size:12px}
     .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0}.metric{min-height:132px;padding:18px;border:1px solid var(--line);background:var(--panel);box-shadow:0 4px 0 #ded8cb}.metric-label{color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em}.metric-value{margin:9px 0 6px;font:700 clamp(24px,3vw,36px)/1 Georgia,"Noto Serif TC",serif}.metric-sub{color:var(--muted);font-size:12px;line-height:1.6}.up{color:var(--red);font-weight:800}.down{color:var(--green);font-weight:800}
-    .toolbar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:minmax(220px,1fr) repeat(2,auto) auto;gap:8px;align-items:center;margin-top:18px;padding:10px;border:1px solid var(--line);background:rgba(243,240,232,.94);backdrop-filter:blur(10px)}.control{height:42px;border:1px solid #bcb6a9;border-radius:0;background:#fffdf7;color:var(--ink);padding:0 12px}.control:focus{outline:2px solid #18211c;outline-offset:-2px}.result-count{padding:0 8px;color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
+    .toolbar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:minmax(220px,1fr) repeat(3,auto) auto;gap:8px;align-items:center;margin-top:18px;padding:10px;border:1px solid var(--line);background:rgba(243,240,232,.94);backdrop-filter:blur(10px)}.control{height:42px;border:1px solid #bcb6a9;border-radius:0;background:#fffdf7;color:var(--ink);padding:0 12px}.control:focus{outline:2px solid #18211c;outline-offset:-2px}.result-count{padding:0 8px;color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
     .table-shell{overflow:auto;border:1px solid var(--line);border-top:0;background:var(--panel);box-shadow:var(--shadow)}table{width:100%;min-width:1220px;border-collapse:collapse}th,td{padding:13px 11px;border-bottom:1px solid #e7e2d8;text-align:left;font-size:13px;vertical-align:top}th{position:sticky;top:63px;z-index:3;background:#e9e4d9;color:#464e49;font-size:11px;letter-spacing:.08em;white-space:nowrap}tbody tr{transition:.15s}tbody tr:hover{background:#f7f0df}.rank{color:#8a918c;font:700 18px Georgia,serif}.ticker{font-weight:900;white-space:nowrap}.ticker small{display:block;margin-top:3px;color:var(--muted);font-weight:500}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
-    .tag{display:inline-flex;align-items:center;gap:4px;margin:1px 2px 1px 0;padding:4px 7px;border:1px solid currentColor;border-radius:99px;font-size:11px;font-weight:900;white-space:nowrap}.tag-buy{color:#fff;background:var(--green);border-color:var(--green)}.tag-watch{color:var(--amber);background:#fff6df}.tag-volume{color:#a34b19;background:#fff0e5}.tag-margin-up{color:var(--red);background:#fff0ed}.tag-margin-down{color:#176b8d;background:#eaf7fb}.chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}.chip{padding:3px 5px;background:#ece9e1;color:#909690;font-size:10px;font-weight:800}.chip.ok{background:#dceee5;color:#086747}.reason{max-width:285px;color:#39413c;font-size:12px;line-height:1.55}.empty{padding:50px!important;text-align:center;color:var(--muted)}
+    .tag{display:inline-flex;align-items:center;gap:4px;margin:1px 2px 1px 0;padding:4px 7px;border:1px solid currentColor;border-radius:99px;font-size:11px;font-weight:900;white-space:nowrap}.tag-buy{color:#fff;background:var(--green);border-color:var(--green)}.tag-watch{color:var(--amber);background:#fff6df}.tag-volume{color:#a34b19;background:#fff0e5}.tag-margin-up{color:var(--red);background:#fff0ed}.tag-margin-down{color:#176b8d;background:#eaf7fb}.chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}.chip{padding:3px 5px;background:#f5dfda;color:#9d463c;font-size:10px;font-weight:800}.chip.ok{background:#dceee5;color:#086747}.chip.unknown{background:#ece9e1;color:#858c86}.reason{max-width:285px;color:#39413c;font-size:12px;line-height:1.55}.empty{padding:50px!important;text-align:center;color:var(--muted)}
     .footnotes{display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:10px}.note{padding:16px;border:1px solid var(--line);background:var(--panel);font-size:12px;line-height:1.8}.note strong{font-size:13px}.method{border-left:5px solid var(--green)}.disclaimer{border-left:5px solid var(--amber)}
     @media(max-width:980px){.summary{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.result-count{text-align:right}.footnotes{grid-template-columns:1fr}}
     @media(max-width:620px){main{width:min(100% - 20px,1500px);padding-top:10px}.mast{grid-template-columns:1fr;padding:22px}.mast:after{font-size:38px}.actions{text-align:left}.summary{grid-template-columns:1fr 1fr}.metric{min-height:112px;padding:14px}.toolbar{position:static;grid-template-columns:1fr}.result-count{text-align:left}.table-shell{border-top:1px solid var(--line)}th{top:0}}
@@ -24,19 +24,20 @@
 <body>
 <main>
   <header class="mast">
-    <div><p class="eyebrow">OPEN SESAME · QUANT SIGNAL DESK</p><h1>開盤密碼</h1><p>上市普通股盤後雷達｜趨勢・動能・籌碼・大盤環境</p></div>
+    <div><p class="eyebrow">OPEN SESAME · 6-FACTOR SIGNAL DESK</p><h1>開盤密碼</h1><p>六條件個股評分 × Market Gate｜每日盤後量化雷達</p></div>
     <div class="actions"><button class="reload" id="reload" type="button">重新載入</button><div class="loadmsg" id="loadmsg" aria-live="polite"></div></div>
   </header>
   <section class="summary" id="summary" aria-label="市場摘要"></section>
   <section class="toolbar" aria-label="股票篩選工具">
     <input class="control" id="search" type="search" placeholder="搜尋代號或公司名稱" aria-label="搜尋股票">
-    <select class="control" id="signal" aria-label="訊號篩選"><option value="all">全部訊號</option><option value="priority">優先觀察</option><option value="volume">量能放大</option><option value="trust">投信買超</option></select>
-    <select class="control" id="sort" aria-label="排序方式"><option value="signal">訊號強度</option><option value="change">今日漲幅</option><option value="value">成交金額</option><option value="trust">投信買超</option></select>
+    <select class="control" id="signal" aria-label="訊號篩選"><option value="all">全部訊號</option><option value="priority">只看優先觀察</option></select>
+    <select class="control" id="minimum" aria-label="最低通過條件"><option value="0">全部分數</option><option value="3">最低 3/6</option><option value="4">最低 4/6</option><option value="5">最低 5/6</option><option value="6">只看 6/6</option></select>
+    <select class="control" id="sort" aria-label="排序方式"><option value="score">條件分數</option><option value="change">今日漲幅</option><option value="volume">成交量</option><option value="trust">投信買超</option></select>
     <div class="result-count" id="result-count">載入中</div>
   </section>
   <div class="table-shell"><table><thead><tr><th>#</th><th>股票</th><th>收盤</th><th>今日</th><th>成交量 / 金額</th><th>投信</th><th>月週趨勢</th><th>KD</th><th>相對大盤</th><th>融資</th><th>訊號</th><th>量化理由</th></tr></thead><tbody id="tbody"><tr><td class="empty" colspan="12">正在讀取盤後資料…</td></tr></tbody></table></div>
   <section class="footnotes">
-    <div class="note method"><strong>訊號方法</strong><br>優先觀察須同時符合：月線與週線向上、KD 黃金交叉、投信買超、大盤趨勢轉強。候選池依單日漲幅、成交金額與成交量排序，再計算前段股票的歷史技術指標。</div>
+    <div class="note method"><strong>六條件 + Market Gate</strong><br>六條件為月週線向上、KD 嚴格黃金交叉、投信買超、量能放大、20 日跑贏大盤、融資未單日暴增 5%。大盤 20 日趨勢向上且站上 60MA 才算 Gate PASS；Gate 通過且至少 5/6 才列為優先觀察。</div>
     <div class="note disclaimer"><strong>風險提醒</strong><br>本頁是盤後量化篩選工具，不是即時報價或投資建議。任何訊號均不保證獲利，交易前請自行核對交易所原始資料並設定風險界線。</div>
   </section>
 </main>
@@ -50,34 +51,33 @@
   const signed=value=>value==null?'—':`${value>0?'+':''}${num(value,2)}%`;
   const tag=(text,type='watch')=>`<span class="tag tag-${type}">${esc(text)}</span>`;
   const metric=(label,value,sub='')=>`<article class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></article>`;
-  const chips=c=>{const defs=[['ma','月週↑'],['kd','KD交叉'],['trust','投信+'],['market','大盤↑']];return `<div class="chips">${defs.map(([k,t])=>`<span class="chip ${c?.[k]?'ok':''}">${c?.[k]?'✓':'–'} ${t}</span>`).join('')}</div>`};
+  const chips=c=>{const defs=[['ma','月週↑'],['kd','KD交叉'],['trust','投信+'],['volume','量能+'],['relative','RS+'],['margin','融資健康']];return `<div class="chips">${defs.map(([k,t])=>{const v=c?.[k];return `<span class="chip ${v===true?'ok':v==null?'unknown':''}">${v===true?'✓':v===false?'✕':'—'} ${t}</span>`}).join('')}</div>`};
 
   function renderSummary(d){
     const q=d.market?.quote, m=d.market?.margin;
-    const date=d.data_date||q?.date||d.trust_date||'—';
+    const dates=d.source_dates||{quote:d.data_date||q?.date,trust:d.trust_date,margin:d.margin_date};
     const marketClass=q?.change>0?'up':q?.change<0?'down':'';
     $('summary').innerHTML=[
-      metric('資料交易日',esc(date),`產生時間 ${d.updated_at?new Date(d.updated_at).toLocaleString('zh-TW'):'—'}`),
+      metric('行情資料日',esc(dates.quote||'—'),`投信 ${esc(dates.trust||'—')} · 融資 ${esc(dates.margin||'—')}`),
       metric('加權指數',q?num(q.index,2):'資料待補',q?`<span class="${marketClass}">${q.change>0?'▲ ':q.change<0?'▼ ':''}${signed(q.change_pct)}</span> · ${q.above_ma60?'站上 60K':'60K 下方'}`:''),
       metric('大盤成交值',q?.amount!=null?`${num(q.amount)} 億`:'資料待補',q?.vol_surge?tag(`量增 ${q.vol_ratio}×`,'volume'):`5 日均 ${num(q?.amount_avg5)} 億`),
       metric('融資餘額',m?`${num(m.balance)} 億`:'資料待補',m?`今日 ${m.change>0?'+':''}${num(m.change,1)} 億 · 近 5 日${esc(m.trend||'—')}`:''),
       metric('分析標的',`${d.stocks?.length||0} 檔`,`上市普通股`),
-      metric('優先觀察',`${d.stocks?.filter(x=>x.priority).length||0} 檔`,tag('四項全數符合','buy')),
+      metric('優先觀察',`${d.stocks?.filter(x=>x.priority).length||0} 檔`,tag('Gate PASS + 至少 5/6','buy')),
       metric('量能放大',`${d.stocks?.filter(x=>x.vol_surge).length||0} 檔`,`相對 5 / 20 日均量`),
-      metric('市場環境',q?.trend_up?'偏多':'保守',q?.trend_up?tag('趨勢向上','buy'):tag('等待轉強'))
+      metric('Market Gate',d.market?.gate===true?'PASS':d.market?.gate===false?'BLOCK':'待確認',d.market?.gate===true?tag('趨勢↑ · 60MA↑','buy'):tag(d.market?.gate===false?'未同時達標':'資料不足'))
     ].join('');
   }
 
   function filteredRows(){
-    const query=$('search').value.trim().toLowerCase(), signal=$('signal').value, sort=$('sort').value;
+    const query=$('search').value.trim().toLowerCase(), signal=$('signal').value, minimum=Number($('minimum').value), sort=$('sort').value;
     let rows=[...(state.data?.stocks||[])].filter(x=>(`${x.code} ${x.name}`).toLowerCase().includes(query));
     if(signal==='priority')rows=rows.filter(x=>x.priority);
-    if(signal==='volume')rows=rows.filter(x=>x.vol_surge);
-    if(signal==='trust')rows=rows.filter(x=>(x.trust_net||0)>0);
+    rows=rows.filter(x=>(x.cond_count||0)>=minimum);
     const sorter={
-      signal:(a,b)=>(Number(b.priority)-Number(a.priority))||(b.cond_count||0)-(a.cond_count||0)||(b.change_pct||0)-(a.change_pct||0),
+      score:(a,b)=>(Number(b.priority)-Number(a.priority))||(b.cond_count||0)-(a.cond_count||0)||(b.score||0)-(a.score||0)||(b.change_pct||0)-(a.change_pct||0),
       change:(a,b)=>(b.change_pct||0)-(a.change_pct||0),
-      value:(a,b)=>(b.trade_value||0)-(a.trade_value||0),
+      volume:(a,b)=>(b.volume||0)-(a.volume||0),
       trust:(a,b)=>(b.trust_net||0)-(a.trust_net||0)
     }[sort];
     return rows.sort(sorter);
@@ -88,7 +88,7 @@
     if(!rows.length){$('tbody').innerHTML='<tr><td class="empty" colspan="12">沒有符合目前條件的股票</td></tr>';return}
     $('tbody').innerHTML=rows.map((x,i)=>{
       const moveClass=x.change>0?'up':x.change<0?'down':'';
-      const signal=x.priority?tag('★ 優先觀察','buy'):tag(`觀察 ${x.cond_count??0}/4`);
+      const signal=x.priority?tag(`★ 優先觀察 ${x.cond_count??0}/6`,'buy'):tag(`觀察 ${x.cond_count??0}/6 · ${x.score??0}分`);
       const volume=x.vol_surge?tag(`量增 ${x.vol_ratio||''}×`,'volume'):'';
       const margin=x.margin_flag?tag(`融資${x.margin_flag}`,x.margin_flag==='大增'?'margin-up':'margin-down'):'';
       const reason=x.reason?esc(x.reason):'<span class="metric-sub">尚無顯著量化誘因</span>';
@@ -102,7 +102,7 @@
     catch(error){console.error(error);$('loadmsg').textContent='資料載入失敗，請稍後重試';$('tbody').innerHTML='<tr><td class="empty" colspan="12">無法讀取資料。請確認 GitHub Actions 已成功更新 dashboard.json。</td></tr>'}
     finally{btn.disabled=false;btn.textContent='重新載入'}
   }
-  ['search','signal','sort'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',renderRows));
+  ['search','signal','minimum','sort'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',renderRows));
   $('reload').addEventListener('click',loadData);loadData();
 })();
 </script>

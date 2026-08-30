@@ -13,8 +13,11 @@
 
 import json
 import os
+import ssl
 import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,12 +29,13 @@ MI_MARGN_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date
 FMTQIK_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date={date}&response=json"
 STOCK_DAY_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date={date}&stockNo={code}&response=json"
 
-TOP_N = int(os.getenv("TOP_N", "200"))  # 清單保留檔數
-HISTORY_TOP = int(os.getenv("HISTORY_TOP", "30"))  # 可由 Actions 環境變數調整
+TOP_N = int(os.getenv("TOP_N", "80"))  # 完整分析後顯示的候選檔數
+HISTORY_TOP = int(os.getenv("HISTORY_TOP", str(TOP_N)))
+HISTORY_WORKERS = int(os.getenv("HISTORY_WORKERS", "1"))
 HISTORY_MONTHS = 3   # 個股歷史抓幾個月
 MARKET_MONTHS = 4    # 大盤歷史抓幾個月(60日均線需要)
 MARGIN_TREND_DAYS = 12   # 大盤融資趨勢往回抓幾個「日曆日」
-REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.4"))  # 對 rwd 端點的禮貌延遲(秒)
+REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.8"))  # 對 rwd 端點的禮貌延遲(秒)
 
 VOL_SURGE_5 = 1.5    # 個股:今日量 >= 1.5 倍 5 日均量 → 量增
 VOL_SURGE_20 = 2.0   # 個股:今日量 >= 2.0 倍 20 日均量 → 量增
@@ -40,14 +44,39 @@ MARGIN_FLAG_PCT = 5.0  # 個股融資餘額單日增減 >= 5% → 明顯放大
 
 PENDING = "資料待補"
 
+# Python 3.13+ 在部分平台預設啟用 X509 strict；TWSE 憑證鏈缺少非必要的
+# Subject Key Identifier 時會被拒絕。保留 CA、主機名與有效期驗證，只關閉
+# 額外 strict flag，避免使用不安全的 CERT_NONE。
+SSL_CONTEXT = ssl.create_default_context()
+if hasattr(ssl, "VERIFY_X509_STRICT"):
+    SSL_CONTEXT.verify_flags &= ~ssl.VERIFY_X509_STRICT
+
 
 def fetch_json(url, timeout=30, retries=2):
     """抓取 JSON,失敗回傳 None(不中斷整體流程)。"""
     for i in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; OpenSesameStockBot/3.0)",
+                "Accept": "application/json,text/plain,*/*",
+                "Referer": "https://www.twse.com.tw/",
+            })
+            with urllib.request.urlopen(req, timeout=timeout, context=SSL_CONTEXT) as r:
                 return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # TWSE 對休市日或暫無資料的查詢會 308 到相同 URL；urllib 會判定
+            # 為無限重導。這不是可藉重試修復的網路錯誤，直接交由上層往前找。
+            if e.code == 308:
+                return None
+            if e.code == 307 and i < retries:
+                wait = 10 * (i + 1)
+                print(f"[info] TWSE throttled; retrying in {wait}s")
+                time.sleep(wait)
+                continue
+            if i == retries:
+                print(f"[warn] fetch failed: {url} ({e})")
+                return None
+            time.sleep(1.5 * (i + 1))
         except Exception as e:
             if i == retries:
                 print(f"[warn] fetch failed: {url} ({e})")
@@ -122,7 +151,10 @@ def fetch_trust_net():
     """T86 → {code: 投信買賣超(張)}。往回最多找 10 天取得最近一個交易日。"""
     today = datetime.now(timezone(timedelta(hours=8)))
     for back in range(10):
-        d = (today - timedelta(days=back)).strftime("%Y%m%d")
+        day = today - timedelta(days=back)
+        if day.weekday() >= 5:
+            continue
+        d = day.strftime("%Y%m%d")
         resp = fetch_json(T86_URL.format(date=d))
         time.sleep(REQUEST_DELAY)
         if not resp or resp.get("stat") != "OK" or not resp.get("data"):
@@ -149,36 +181,51 @@ def roc_or_ymd(ymd):
 
 
 def parse_mi_margn(resp):
-    """MI_MARGN 回應 → (大盤彙總 dict, 個股 dict)。任一缺少回傳 None。"""
+    """MI_MARGN 回應 → (大盤彙總 dict, 個股 dict)。
+
+    TWSE 的個股表曾使用「代號」或「股票代號」，且融資/融券區塊會重複
+    出現「前日餘額」「今日餘額」。個股融資固定取第一組餘額欄位，不再
+    依賴單一完整欄位名稱。
+    """
     if not resp or resp.get("stat") != "OK":
         return None, None
     summary, per_stock = None, None
     for t in resp.get("tables", []):
-        fields = t.get("fields", [])
+        fields = [str(field).strip() for field in t.get("fields", [])]
         data = t.get("data", [])
         if not data:
             continue
-        if "股票代號" in fields:
-            # 融資融券彙總(個股):前日餘額/今日餘額 取「融資」區塊(最先出現者)
+        code_field = next((name for name in ("股票代號", "代號", "證券代號")
+                           if name in fields), None)
+        if code_field:
+            # 個股彙總表前半段是融資，後半段是融券。
             try:
+                i_code = fields.index(code_field)
                 i_prev = fields.index("前日餘額")
                 i_today = fields.index("今日餘額")
             except ValueError:
                 continue
             per_stock = {}
             for row in data:
-                code = str(row[0]).strip()
+                if max(i_code, i_prev, i_today) >= len(row):
+                    continue
+                code = str(row[i_code]).strip()
                 prev = to_float(row[i_prev])
                 cur = to_float(row[i_today])
                 if code and prev is not None and cur is not None:
                     per_stock[code] = {"prev": prev, "today": cur}
         else:
-            # 信用交易統計:列首為 項目(融資金額(仟元) 等)
+            # 信用交易統計：以欄位索引取餘額，避免假設欄位永遠位於末兩欄。
+            try:
+                i_prev = fields.index("前日餘額")
+                i_today = fields.index("今日餘額")
+            except ValueError:
+                continue
             for row in data:
                 item = str(row[0])
-                if "融資金額" in item:
-                    prev = to_float(row[-2])
-                    cur = to_float(row[-1])
+                if "融資金額" in item and max(i_prev, i_today) < len(row):
+                    prev = to_float(row[i_prev])
+                    cur = to_float(row[i_today])
                     if prev is not None and cur is not None:
                         summary = {
                             "prev": round(prev / 100000, 1),   # 仟元 → 億元
@@ -188,23 +235,28 @@ def parse_mi_margn(resp):
 
 
 def fetch_margin():
-    """MI_MARGN → (大盤融資趨勢 history, 個股融資 dict)。"""
+    """MI_MARGN → (大盤融資趨勢 history, 個股融資 dict, 最新資料日)。"""
     today = datetime.now(timezone(timedelta(hours=8)))
     history = []      # [{date, balance(億元)}] 由舊到新
     per_stock = None
+    margin_date = None
     for back in range(MARGIN_TREND_DAYS):
-        d = (today - timedelta(days=back)).strftime("%Y%m%d")
+        day = today - timedelta(days=back)
+        if day.weekday() >= 5:
+            continue
+        d = day.strftime("%Y%m%d")
         sel = "ALL" if per_stock is None else "MS"
         resp = fetch_json(MI_MARGN_URL.format(date=d, sel=sel))
         time.sleep(REQUEST_DELAY)
         summary, stocks = parse_mi_margn(resp)
         if stocks and per_stock is None:
             per_stock = stocks
+            margin_date = roc_or_ymd(d)
         if summary:
             history.append({"date": roc_or_ymd(d), "balance": summary["today"],
                             "prev_balance": summary["prev"]})
     history.reverse()
-    return (history or None), per_stock
+    return (history or None), per_stock, margin_date
 
 
 def fetch_market_history():
@@ -315,13 +367,12 @@ def analyze_stock_history(rows, market_ret20):
     else:
         out["month_week"] = f"月{'↑' if m_up else '↓'}/週{'↑' if w_up else '↓'}"
 
-    # KD 黃金交叉(3 日內 K 上穿 D 且目前 K>D)
+    # KD 黃金交叉：只接受本交易日嚴格上穿，不使用 tolerance。
     ks, ds = calc_kd(rows)
-    if ks is None or len(ks) < 4:
+    if ks is None or len(ks) < 2:
         out["kd"], out["kd_golden"] = "資料不足", None
     else:
-        # 3 日內 K 由下(或貼近 D 的交叉帶)上穿:留 0.5 的容忍避免臨界值抖動漏判
-        golden = ks[-1] > ds[-1] and any(ks[-i] <= ds[-i] + 0.5 for i in range(2, 5))
+        golden = ks[-2] <= ds[-2] and ks[-1] > ds[-1]
         out["k"], out["d"] = round(ks[-1], 1), round(ds[-1], 1)
         out["kd_golden"] = golden
         # 全形「＜」:避免半形 < 在網頁被當成 HTML 標籤
@@ -407,6 +458,30 @@ def build_reason(s):
     return ";".join(parts) if parts else None
 
 
+def evaluate_conditions(stock, market_gate):
+    """計算真正六條件；None 代表資料不足，不等同條件失敗。"""
+    month_up, week_up = stock.get("month_up"), stock.get("week_up")
+    ma = None if month_up is None or week_up is None else month_up and week_up
+    trust_net = stock.get("trust_net")
+    conditions = {
+        "ma": ma,
+        "kd": stock.get("kd_golden"),
+        "trust": None if trust_net is None else trust_net > 0,
+        "volume": stock.get("vol_surge"),
+        "relative": stock.get("outperform"),
+        "margin": stock.get("margin_healthy"),
+    }
+    passed = sum(value is True for value in conditions.values())
+    available = sum(value is not None for value in conditions.values())
+    stock["conditions"] = conditions
+    stock["cond_count"] = passed
+    stock["available_count"] = available
+    stock["score"] = round(passed / 6 * 100)
+    stock["priority"] = market_gate is True and passed >= 5
+    stock["status"] = "優先觀察" if stock["priority"] else "觀察"
+    return stock
+
+
 # ---------- 主流程 ----------
 
 def main():
@@ -424,11 +499,14 @@ def main():
             stocks = []
 
     trust, trust_date = fetch_trust_net()
-    margin_history, margin_stocks = fetch_margin()
+    margin_history, margin_stocks, margin_date = fetch_margin()
     mkt_rows = fetch_market_history()
     market = analyze_market(mkt_rows)
     market_ret20 = market.get("ret20_pct") if market else None
-    market_trend_up = market.get("trend_up") if market else None
+    if not market or market.get("trend_up") is None or market.get("above_ma60") is None:
+        market_gate = None
+    else:
+        market_gate = market["trend_up"] and market["above_ma60"]
 
     # 大盤融資趨勢
     margin_summary = None
@@ -440,11 +518,29 @@ def main():
             d5 = latest["balance"] - margin_history[-5]["balance"]
             trend = "增" if d5 > 0 else "減" if d5 < 0 else "平"
         margin_summary = {
+            "date": latest["date"],
             "balance": latest["balance"],       # 億元
             "change": diff,
             "trend": trend,
             "history": margin_history,
         }
+
+    # 所有顯示候選股皆計算歷史指標，避免第 31 名後無法公平比較。
+    analysis_count = min(HISTORY_TOP, len(stocks))
+    histories = {}
+    if analysis_count:
+        with ThreadPoolExecutor(max_workers=max(1, HISTORY_WORKERS)) as executor:
+            future_codes = {
+                executor.submit(fetch_stock_history, stock["code"]): stock["code"]
+                for stock in stocks[:analysis_count]
+            }
+            for future in as_completed(future_codes):
+                code = future_codes[future]
+                try:
+                    histories[code] = future.result()
+                except Exception as exc:
+                    print(f"[warn] history failed: {code} ({exc})")
+                    histories[code] = []
 
     for i, s in enumerate(stocks):
         s["trust_net"] = trust.get(s["code"], 0) if trust else None
@@ -458,58 +554,74 @@ def main():
                 s["margin_change_pct"] = round(pct, 1)
                 s["margin_flag"] = ("大增" if pct >= MARGIN_FLAG_PCT
                                     else "大減" if pct <= -MARGIN_FLAG_PCT else None)
+                s["margin_healthy"] = pct < MARGIN_FLAG_PCT
                 s["margin"] = f"{ms['today']:,.0f} 張({pct:+.1f}%)"
             else:
                 s["margin"] = f"{ms['today']:,.0f} 張"
+                s["margin_healthy"] = ms["today"] == 0
         elif margin_stocks:
             s["margin"] = "無融資"
+            s["margin_healthy"] = True
         else:
             s["margin"] = PENDING
+            s["margin_healthy"] = None
 
-        # 技術指標:僅前 HISTORY_TOP 名抓歷史計算
+        # 技術指標：排程可用 HISTORY_TOP 控制第一版/完整版的分析檔數。
         if i < HISTORY_TOP:
-            rows = fetch_stock_history(s["code"])
+            rows = histories.get(s["code"], [])
             if rows and len(rows) >= 6:
                 s.update(analyze_stock_history(rows, market_ret20))
             else:
                 s["month_week"] = s["kd"] = s["relative"] = PENDING
+                s["month_up"] = s["week_up"] = s["kd_golden"] = None
+                s["vol_surge"] = s["outperform"] = None
         else:
             s["month_week"] = s["kd"] = s["relative"] = f"僅前{HISTORY_TOP}名計算"
+            s["month_up"] = s["week_up"] = s["kd_golden"] = None
+            s["vol_surge"] = s["outperform"] = None
 
-        # 六條件中的優先買入四條件
-        conds = {
-            "ma": bool(s.get("month_up")) and bool(s.get("week_up")),
-            "kd": bool(s.get("kd_golden")),
-            "trust": bool(s.get("trust_net") and s["trust_net"] > 0),
-            "market": bool(market_trend_up),
-        }
-        s["conditions"] = conds
-        s["cond_count"] = sum(conds.values())
-        s["priority"] = all(conds.values())
-        s["status"] = "優先買入" if s["priority"] else "觀察"
+        evaluate_conditions(s, market_gate)
 
-        # 跑贏大盤 → 理由欄(量化摘要;新聞來源尚未接入,標示待補)
-        if s.get("outperform"):
-            s["reason"] = build_reason(s)
-            s["news"] = PENDING
-        else:
-            s["reason"] = None
+        s["reason"] = build_reason(s)
+
+    stocks.sort(
+        key=lambda s: (
+            bool(s.get("priority")),
+            s.get("cond_count", 0),
+            s.get("score", 0),
+            s.get("change_pct") or 0,
+            s.get("volume") or 0,
+        ),
+        reverse=True,
+    )
 
     if trust is None:
         print("[warn] T86 unavailable → 投信欄位標示待補")
     result = {
-        "schema_version": 2,
+        "schema_version": 3,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "data_date": market.get("date") if market else trust_date,
         "trust_date": trust_date,
+        "margin_date": margin_date,
+        "source_dates": {
+            "quote": market.get("date") if market else None,
+            "trust": trust_date,
+            "margin": margin_date,
+        },
         "methodology": {
-            "universe": "TWSE 上市普通股",
-            "candidate_rank": "單日漲幅百分比、成交金額、成交量",
+            "universe": "TWSE 上市四碼普通股（不含 ETF / ETN）",
+            "candidate_rank": "優先觀察、六條件通過數、Score、單日漲幅、成交量",
             "history_count": HISTORY_TOP,
-            "priority_conditions": ["月週線向上", "KD黃金交叉", "投信買超", "大盤轉強"],
+            "priority_rule": "Market Gate PASS 且至少 5/6",
+            "conditions": [
+                "月線與週線向上", "KD嚴格黃金交叉", "投信買超",
+                "量能放大", "20日跑贏大盤", "融資未單日暴增5%",
+            ],
         },
         "market": {
             "source": "TWSE",
+            "gate": market_gate,
+            "gate_rule": "20日趨勢向上且站上60MA",
             "finance_today": margin_summary["balance"] * 100 if margin_summary else None,  # 相容舊欄位(百萬元)
             "margin": margin_summary,
             "quote": market,

@@ -9,8 +9,13 @@ on:
       - "tests/**"
       - ".github/workflows/main.yml"
   schedule:
-    # 台北時間平日 16:30，避開盤後資料仍在陸續發布的時段。
+    # 台北時間 16:30 第一版；21:30 完整版。
     - cron: "30 8 * * 1-5"
+    - cron: "30 13 * * 1-5"
+
+concurrency:
+  group: taiwan-stock-data-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -19,6 +24,10 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TOP_N: ${{ github.event.schedule == '30 8 * * 1-5' && '40' || '80' }}
+      HISTORY_TOP: ${{ github.event.schedule == '30 8 * * 1-5' && '40' || '80' }}
+      HISTORY_WORKERS: "1"
 
     steps:
       - name: Checkout
@@ -48,5 +57,6 @@ jobs:
             echo "No data changes."
           else
             git commit -m "Daily Taiwan stock update"
+            git pull --rebase origin main
             git push
           fi

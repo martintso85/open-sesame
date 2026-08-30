@@ -4,13 +4,54 @@ from unittest.mock import patch
 from scripts.update_data import (
     analyze_market,
     analyze_stock_history,
+    evaluate_conditions,
     fetch_base_stocks,
+    parse_mi_margn,
     sma,
     to_float,
 )
 
 
 class IndicatorTests(unittest.TestCase):
+    def test_mi_margn_accepts_twse_code_alias_and_first_balance_group(self):
+        response = {
+            "stat": "OK",
+            "tables": [{
+                "fields": ["代號", "名稱", "買進", "賣出", "現金償還", "前日餘額", "今日餘額", "限額", "買進", "賣出", "現券償還", "前日餘額", "今日餘額"],
+                "data": [["2330", "台積電", "10", "5", "0", "100", "105", "0", "1", "2", "0", "9", "8"]],
+            }, {
+                "fields": ["項目", "買進", "賣出", "現金(券)償還", "前日餘額", "今日餘額"],
+                "data": [["融資金額(仟元)", "0", "0", "0", "100,000", "110,000"]],
+            }],
+        }
+        summary, stocks = parse_mi_margn(response)
+        self.assertEqual(stocks["2330"], {"prev": 100.0, "today": 105.0})
+        self.assertEqual(summary, {"prev": 1.0, "today": 1.1})
+
+    def test_six_conditions_and_market_gate(self):
+        stock = {
+            "month_up": True, "week_up": True, "kd_golden": True,
+            "trust_net": 100, "vol_surge": True, "outperform": True,
+            "margin_healthy": False,
+        }
+        evaluate_conditions(stock, market_gate=True)
+        self.assertEqual(stock["cond_count"], 5)
+        self.assertEqual(stock["available_count"], 6)
+        self.assertTrue(stock["priority"])
+        self.assertEqual(set(stock["conditions"]), {"ma", "kd", "trust", "volume", "relative", "margin"})
+
+    def test_missing_condition_is_unknown_not_failure(self):
+        stock = {
+            "month_up": None, "week_up": None, "kd_golden": True,
+            "trust_net": None, "vol_surge": True, "outperform": None,
+            "margin_healthy": True,
+        }
+        evaluate_conditions(stock, market_gate=None)
+        self.assertIsNone(stock["conditions"]["ma"])
+        self.assertIsNone(stock["conditions"]["trust"])
+        self.assertEqual(stock["available_count"], 3)
+        self.assertFalse(stock["priority"])
+
     @patch("scripts.update_data.fetch_json")
     def test_candidate_universe_and_ranking(self, fetch_json):
         fetch_json.return_value = [
@@ -59,6 +100,16 @@ class IndicatorTests(unittest.TestCase):
         result = analyze_stock_history(rows, market_ret20=5)
         self.assertTrue(result["outperform"])
         self.assertGreater(result["rel_pct"], 0)
+
+    def test_kd_requires_strict_current_cross(self):
+        rows = [{
+            "date": f"2026-08-{day:02d}", "close": 100 + day,
+            "high": 102 + day, "low": 98 + day, "volume": 1_000,
+        } for day in range(1, 31)]
+        with patch("scripts.update_data.calc_kd", return_value=([50, 50.2, 51], [50, 50, 50.5])):
+            self.assertFalse(analyze_stock_history(rows, 0)["kd_golden"])
+        with patch("scripts.update_data.calc_kd", return_value=([50, 49.9, 51], [50, 50, 50.5])):
+            self.assertTrue(analyze_stock_history(rows, 0)["kd_golden"])
 
 
 if __name__ == "__main__":
