@@ -1,59 +1,110 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI 台股六條件選股 Dashboard</title>
-<style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#17202a;margin:0}main{max-width:1280px;margin:auto;padding:18px}
-.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:15px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center}
-h1{font-size:24px;margin:0 0 5px}.muted{color:#667085;font-size:13px}button{background:#1769e0;color:#fff;border:0;border-radius:10px;padding:11px 16px;font-weight:800}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.big{font-size:22px;font-weight:850}
-.table{margin-top:12px;overflow:auto;background:#fff;border-radius:16px;border:1px solid #e5e7eb}table{width:100%;min-width:1150px;border-collapse:collapse}
-th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:13px;vertical-align:top}th{background:#fafafa;white-space:nowrap}.g{color:#16803c;font-weight:800}.r{color:#b42318;font-weight:800}
-.tag{display:inline-block;border-radius:99px;padding:4px 8px;font-weight:800;font-size:12px}.buy{background:#dcfce7;color:#166534}.wait{background:#fef3c7;color:#92400e}
-.pri{background:#166534;color:#fff;padding:5px 10px;font-size:13px}.vol{background:#ffedd5;color:#9a3412}.mup{background:#fee2e2;color:#b91c1c}.mdn{background:#dbeafe;color:#1d4ed8}
-.chips{margin-top:4px;display:flex;flex-wrap:wrap;gap:3px}.chip{border-radius:6px;padding:2px 5px;font-size:11px;font-weight:700;background:#f1f5f9;color:#94a3b8}.chip.ok{background:#dcfce7;color:#166534}
-.reason{font-size:12px;line-height:1.45;max-width:260px;color:#334155}
-.note{margin-top:12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px;font-size:12px;line-height:1.6}
-.hint{margin-top:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px;font-size:12px;line-height:1.6}
-@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.head{flex-direction:column;align-items:flex-start}}
-</style></head>
-<body><main>
-<section class="head card"><div><h1>🔥 AI 台股六條件選股 Dashboard</h1><div class="muted">每日盤後自動更新｜價量・投信・KD・月週線・融資・相對大盤</div></div><div style="text-align:right"><button id="reload" onclick="loadData()">↻ 更新</button><div id="loadmsg" class="muted" style="margin-top:6px"></div></div></section>
-<div id="summary" class="grid"></div>
-<div class="table"><table><thead><tr><th>排名</th><th>股票</th><th>收盤</th><th>漲跌</th><th>成交量</th><th>投信</th><th>月/週</th><th>KD</th><th>相對大盤</th><th>融資</th><th>訊號</th><th>最新理由(做多誘因)</th></tr></thead><tbody id="tbody"><tr><td colspan="12">載入中…</td></tr></tbody></table></div>
-<div class="hint"><b>📈 操作提示:</b>當<b>大盤趨勢向上</b>時,順著 <b>60 日均線(60K)</b>操作——指數與個股站上 60K 且 60K 上揚時偏多順勢;跌破 60K 或 60K 走平下彎時保守應對、嚴設停損。<br>
-<b>⭐ 優先買入</b>=同時符合 4 條件:① 月線與週線趨勢向上 ② KD 黃金交叉 ③ 投信買超 ④ 大盤走勢轉強向上。<b>量增</b>=成交量明顯大於 5 日/20 日均量(不論當天漲跌都會標示)。<b>融資大增/大減</b>=個股融資餘額單日增減幅明顯放大。</div>
-<div class="note"><b>免責:</b>本網站為每日盤後量化篩選工具,「優先買入」只是量化篩選訊號,不保證獲利,任何勝率描述僅為歷史統計、不構成保證,也不是投資建議。資料以交易所公開資料為準;盤中即時報價不包含在本免費版。</div>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="每日盤後更新的台股量化訊號儀表板">
+  <title>開盤密碼｜台股量化雷達</title>
+  <style>
+    :root{--ink:#151a17;--muted:#68716b;--paper:#f3f0e8;--panel:#fffdf7;--line:#d9d4c8;--red:#c53b2f;--green:#08785b;--amber:#a56310;--shadow:0 14px 40px rgba(31,38,33,.08)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background-image:radial-gradient(#cbc5b7 0.7px,transparent .7px);background-size:8px 8px}
+    button,input,select{font:inherit}button{cursor:pointer}main{width:min(1500px,calc(100% - 32px));margin:auto;padding:22px 0 56px}
+    .mast{position:relative;overflow:hidden;display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;padding:30px;border:1px solid #232923;border-radius:2px;color:#f8f3e9;background:#18211c;box-shadow:var(--shadow)}
+    .mast:after{content:"MARKET / AFTER HOURS";position:absolute;right:-14px;top:16px;color:#ffffff12;font:900 56px/1 Georgia,serif;letter-spacing:-2px;white-space:nowrap}.eyebrow{margin:0 0 10px;color:#a9cf9e;font-size:12px;font-weight:800;letter-spacing:.18em}.mast h1{position:relative;margin:0;font:700 clamp(32px,5vw,64px)/.95 Georgia,"Noto Serif TC",serif;letter-spacing:-.04em}.mast p{margin:14px 0 0;color:#bdc7c0;font-size:14px}.actions{position:relative;z-index:1;text-align:right}.reload{border:1px solid #e8deca;background:#e8deca;color:#18211c;padding:11px 18px;font-weight:900;transition:.2s}.reload:hover{transform:translateY(-2px);background:#fff}.reload:disabled{opacity:.65;cursor:wait}.loadmsg{min-height:18px;margin-top:8px;color:#aeb9b1;font-size:12px}
+    .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0}.metric{min-height:132px;padding:18px;border:1px solid var(--line);background:var(--panel);box-shadow:0 4px 0 #ded8cb}.metric-label{color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em}.metric-value{margin:9px 0 6px;font:700 clamp(24px,3vw,36px)/1 Georgia,"Noto Serif TC",serif}.metric-sub{color:var(--muted);font-size:12px;line-height:1.6}.up{color:var(--red);font-weight:800}.down{color:var(--green);font-weight:800}
+    .toolbar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:minmax(220px,1fr) repeat(2,auto) auto;gap:8px;align-items:center;margin-top:18px;padding:10px;border:1px solid var(--line);background:rgba(243,240,232,.94);backdrop-filter:blur(10px)}.control{height:42px;border:1px solid #bcb6a9;border-radius:0;background:#fffdf7;color:var(--ink);padding:0 12px}.control:focus{outline:2px solid #18211c;outline-offset:-2px}.result-count{padding:0 8px;color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
+    .table-shell{overflow:auto;border:1px solid var(--line);border-top:0;background:var(--panel);box-shadow:var(--shadow)}table{width:100%;min-width:1220px;border-collapse:collapse}th,td{padding:13px 11px;border-bottom:1px solid #e7e2d8;text-align:left;font-size:13px;vertical-align:top}th{position:sticky;top:63px;z-index:3;background:#e9e4d9;color:#464e49;font-size:11px;letter-spacing:.08em;white-space:nowrap}tbody tr{transition:.15s}tbody tr:hover{background:#f7f0df}.rank{color:#8a918c;font:700 18px Georgia,serif}.ticker{font-weight:900;white-space:nowrap}.ticker small{display:block;margin-top:3px;color:var(--muted);font-weight:500}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+    .tag{display:inline-flex;align-items:center;gap:4px;margin:1px 2px 1px 0;padding:4px 7px;border:1px solid currentColor;border-radius:99px;font-size:11px;font-weight:900;white-space:nowrap}.tag-buy{color:#fff;background:var(--green);border-color:var(--green)}.tag-watch{color:var(--amber);background:#fff6df}.tag-volume{color:#a34b19;background:#fff0e5}.tag-margin-up{color:var(--red);background:#fff0ed}.tag-margin-down{color:#176b8d;background:#eaf7fb}.chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}.chip{padding:3px 5px;background:#ece9e1;color:#909690;font-size:10px;font-weight:800}.chip.ok{background:#dceee5;color:#086747}.reason{max-width:285px;color:#39413c;font-size:12px;line-height:1.55}.empty{padding:50px!important;text-align:center;color:var(--muted)}
+    .footnotes{display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:10px}.note{padding:16px;border:1px solid var(--line);background:var(--panel);font-size:12px;line-height:1.8}.note strong{font-size:13px}.method{border-left:5px solid var(--green)}.disclaimer{border-left:5px solid var(--amber)}
+    @media(max-width:980px){.summary{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.result-count{text-align:right}.footnotes{grid-template-columns:1fr}}
+    @media(max-width:620px){main{width:min(100% - 20px,1500px);padding-top:10px}.mast{grid-template-columns:1fr;padding:22px}.mast:after{font-size:38px}.actions{text-align:left}.summary{grid-template-columns:1fr 1fr}.metric{min-height:112px;padding:14px}.toolbar{position:static;grid-template-columns:1fr}.result-count{text-align:left}.table-shell{border-top:1px solid var(--line)}th{top:0}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="mast">
+    <div><p class="eyebrow">OPEN SESAME · QUANT SIGNAL DESK</p><h1>開盤密碼</h1><p>上市普通股盤後雷達｜趨勢・動能・籌碼・大盤環境</p></div>
+    <div class="actions"><button class="reload" id="reload" type="button">重新載入</button><div class="loadmsg" id="loadmsg" aria-live="polite"></div></div>
+  </header>
+  <section class="summary" id="summary" aria-label="市場摘要"></section>
+  <section class="toolbar" aria-label="股票篩選工具">
+    <input class="control" id="search" type="search" placeholder="搜尋代號或公司名稱" aria-label="搜尋股票">
+    <select class="control" id="signal" aria-label="訊號篩選"><option value="all">全部訊號</option><option value="priority">優先觀察</option><option value="volume">量能放大</option><option value="trust">投信買超</option></select>
+    <select class="control" id="sort" aria-label="排序方式"><option value="signal">訊號強度</option><option value="change">今日漲幅</option><option value="value">成交金額</option><option value="trust">投信買超</option></select>
+    <div class="result-count" id="result-count">載入中</div>
+  </section>
+  <div class="table-shell"><table><thead><tr><th>#</th><th>股票</th><th>收盤</th><th>今日</th><th>成交量 / 金額</th><th>投信</th><th>月週趨勢</th><th>KD</th><th>相對大盤</th><th>融資</th><th>訊號</th><th>量化理由</th></tr></thead><tbody id="tbody"><tr><td class="empty" colspan="12">正在讀取盤後資料…</td></tr></tbody></table></div>
+  <section class="footnotes">
+    <div class="note method"><strong>訊號方法</strong><br>優先觀察須同時符合：月線與週線向上、KD 黃金交叉、投信買超、大盤趨勢轉強。候選池依單日漲幅、成交金額與成交量排序，再計算前段股票的歷史技術指標。</div>
+    <div class="note disclaimer"><strong>風險提醒</strong><br>本頁是盤後量化篩選工具，不是即時報價或投資建議。任何訊號均不保證獲利，交易前請自行核對交易所原始資料並設定風險界線。</div>
+  </section>
 </main>
 <script>
-const P='資料待補';
-const fmt=(n,d=0)=>n==null?'—':Number(n).toLocaleString('zh-TW',{minimumFractionDigits:d,maximumFractionDigits:d>0?d:2});
-const pct=n=>n==null?'':`(${n>0?'+':''}${n}%)`;
-function condChips(c){if(!c)return'';const def=[['ma','月週線↑'],['kd','KD交叉'],['trust','投信買超'],['market','大盤轉強']];
-return `<div class="chips">${def.map(([k,t])=>`<span class="chip ${c[k]?'ok':''}">${c[k]?'✓':'✗'}${t}</span>`).join('')}</div>`}
-function loadData(){const s=document.getElementById('tbody'),btn=document.getElementById('reload'),msg=document.getElementById('loadmsg');
-if(btn){btn.disabled=true;btn.textContent='↻ 更新中…'}
-fetch('data/dashboard.json?ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{
-if(btn){btn.disabled=false;btn.textContent='↻ 更新'}
-if(msg)msg.textContent=`已重新載入 ${new Date().toLocaleTimeString('zh-TW')}｜資料為每日盤後更新`;
-const q=d.market?.quote,mg=d.market?.margin;
-const trendTag=q?(q.trend_up==null?`<span class="tag wait">${P}</span>`:q.trend_up?'<span class="tag buy">趨勢向上</span>':'<span class="tag wait">趨勢偏弱</span>'):`<span class="tag wait">${P}</span>`;
-const k60=q&&q.ma60!=null?(q.above_ma60?'站上60K':'跌破60K'):'';
-document.getElementById('summary').innerHTML=
-`<div class="card"><div class="muted">資料時間</div><div class="big">${d.updated_at?new Date(d.updated_at).toLocaleString('zh-TW'):'—'}</div><div class="muted">投信資料日:${d.trust_date||P}</div></div>
-<div class="card"><div class="muted">大盤加權指數</div><div class="big">${q?fmt(q.index,2):P}</div><div class="${q&&q.change>0?'r':q&&q.change<0?'g':'muted'}">${q?`${q.change>0?'▲':q.change<0?'▼':''}${fmt(Math.abs(q.change),2)} ${pct(q.change_pct)}`:''}</div>${trendTag} <span class="muted">${k60}</span></div>
-<div class="card"><div class="muted">大盤成交值</div><div class="big">${q&&q.amount!=null?fmt(q.amount)+' 億':P}</div><div class="muted">5日均 ${q&&q.amount_avg5!=null?fmt(q.amount_avg5)+' 億':'—'}</div>${q&&q.vol_surge?`<span class="tag vol">量增 ${q.vol_ratio}×</span>`:''}</div>
-<div class="card"><div class="muted">大盤融資餘額</div><div class="big">${mg?fmt(mg.balance)+' 億':P}</div><div class="${mg&&mg.change>0?'r':mg&&mg.change<0?'g':'muted'}">${mg?`今日 ${mg.change>0?'+':''}${fmt(mg.change,1)} 億`:''}</div>${mg&&mg.trend?`<span class="tag ${mg.trend==='增'?'mup':mg.trend==='減'?'mdn':'wait'}">近5日趨勢:${mg.trend}</span>`:''}</div>
-<div class="card"><div class="muted">追蹤股數</div><div class="big">${d.stocks.length}</div></div>
-<div class="card"><div class="muted">⭐ 優先買入</div><div class="big">${d.stocks.filter(x=>x.priority).length} 檔</div><div class="muted">同時符合 4 條件</div></div>
-<div class="card"><div class="muted">量增檔數</div><div class="big">${d.stocks.filter(x=>x.vol_surge).length} 檔</div><div class="muted">量能明顯放大(不分漲跌)</div></div>
-<div class="card"><div class="muted">模式</div><div class="big">盤後</div><span class="tag buy">每日自動</span></div>`;
-const rows=[...d.stocks].sort((a,b)=>(b.priority?1:0)-(a.priority?1:0)||(b.cond_count||0)-(a.cond_count||0));
-s.innerHTML=rows.map((x,i)=>{
-const sig=x.priority?`<span class="tag pri">⭐ 優先買入</span>`:`<span class="tag wait">${x.status||'觀察'}${x.cond_count!=null?` ${x.cond_count}/4`:''}</span>`;
-const volTag=x.vol_surge?` <span class="tag vol">量增${x.vol_ratio?` ${x.vol_ratio}×`:''}</span>`:'';
-const mgTag=x.margin_flag?` <span class="tag ${x.margin_flag==='大增'?'mup':'mdn'}">融資${x.margin_flag}</span>`:'';
-const reason=x.reason?`<div class="reason">🚀 ${x.reason}${x.news===P?`<div class="muted">新聞摘要:${P}</div>`:x.news?`<div>${x.news}</div>`:''}</div>`:'<span class="muted">—</span>';
-return `<tr><td>${i+1}</td><td><b>${x.code} ${x.name}</b></td><td>${x.close??'—'}</td><td class="${x.change>0?'r':x.change<0?'g':''}">${x.change>0?'+':''}${x.change??'—'} ${pct(x.change_pct)}</td><td>${x.volume?fmt(x.volume)+'張':'—'}${volTag}</td><td class="${x.trust_net>0?'r':x.trust_net<0?'g':''}">${x.trust_net!=null?fmt(x.trust_net)+'張':P}</td><td>${x.month_week||'待計算'}</td><td>${x.kd||'待計算'}</td><td class="${x.outperform?'r':''}">${x.relative||'待計算'}</td><td>${x.margin||'待計算'}${mgTag}</td><td>${sig}${condChips(x.conditions)}</td><td>${reason}</td></tr>`}).join('');
-}).catch(e=>{if(btn){btn.disabled=false;btn.textContent='↻ 更新'}if(msg)msg.textContent='載入失敗,請稍後再試';s.innerHTML='<tr><td colspan="12">尚未產生資料,請到 GitHub Actions 手動執行一次更新。</td></tr>'})}
-loadData();
-</script></body></html>
+(() => {
+  'use strict';
+  const state={data:null};
+  const $=id=>document.getElementById(id);
+  const esc=value=>String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const num=(value,digits=0)=>value==null?'—':Number(value).toLocaleString('zh-TW',{minimumFractionDigits:digits,maximumFractionDigits:digits||2});
+  const signed=value=>value==null?'—':`${value>0?'+':''}${num(value,2)}%`;
+  const tag=(text,type='watch')=>`<span class="tag tag-${type}">${esc(text)}</span>`;
+  const metric=(label,value,sub='')=>`<article class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></article>`;
+  const chips=c=>{const defs=[['ma','月週↑'],['kd','KD交叉'],['trust','投信+'],['market','大盤↑']];return `<div class="chips">${defs.map(([k,t])=>`<span class="chip ${c?.[k]?'ok':''}">${c?.[k]?'✓':'–'} ${t}</span>`).join('')}</div>`};
+
+  function renderSummary(d){
+    const q=d.market?.quote, m=d.market?.margin;
+    const date=d.data_date||q?.date||d.trust_date||'—';
+    const marketClass=q?.change>0?'up':q?.change<0?'down':'';
+    $('summary').innerHTML=[
+      metric('資料交易日',esc(date),`產生時間 ${d.updated_at?new Date(d.updated_at).toLocaleString('zh-TW'):'—'}`),
+      metric('加權指數',q?num(q.index,2):'資料待補',q?`<span class="${marketClass}">${q.change>0?'▲ ':q.change<0?'▼ ':''}${signed(q.change_pct)}</span> · ${q.above_ma60?'站上 60K':'60K 下方'}`:''),
+      metric('大盤成交值',q?.amount!=null?`${num(q.amount)} 億`:'資料待補',q?.vol_surge?tag(`量增 ${q.vol_ratio}×`,'volume'):`5 日均 ${num(q?.amount_avg5)} 億`),
+      metric('融資餘額',m?`${num(m.balance)} 億`:'資料待補',m?`今日 ${m.change>0?'+':''}${num(m.change,1)} 億 · 近 5 日${esc(m.trend||'—')}`:''),
+      metric('分析標的',`${d.stocks?.length||0} 檔`,`上市普通股`),
+      metric('優先觀察',`${d.stocks?.filter(x=>x.priority).length||0} 檔`,tag('四項全數符合','buy')),
+      metric('量能放大',`${d.stocks?.filter(x=>x.vol_surge).length||0} 檔`,`相對 5 / 20 日均量`),
+      metric('市場環境',q?.trend_up?'偏多':'保守',q?.trend_up?tag('趨勢向上','buy'):tag('等待轉強'))
+    ].join('');
+  }
+
+  function filteredRows(){
+    const query=$('search').value.trim().toLowerCase(), signal=$('signal').value, sort=$('sort').value;
+    let rows=[...(state.data?.stocks||[])].filter(x=>(`${x.code} ${x.name}`).toLowerCase().includes(query));
+    if(signal==='priority')rows=rows.filter(x=>x.priority);
+    if(signal==='volume')rows=rows.filter(x=>x.vol_surge);
+    if(signal==='trust')rows=rows.filter(x=>(x.trust_net||0)>0);
+    const sorter={
+      signal:(a,b)=>(Number(b.priority)-Number(a.priority))||(b.cond_count||0)-(a.cond_count||0)||(b.change_pct||0)-(a.change_pct||0),
+      change:(a,b)=>(b.change_pct||0)-(a.change_pct||0),
+      value:(a,b)=>(b.trade_value||0)-(a.trade_value||0),
+      trust:(a,b)=>(b.trust_net||0)-(a.trust_net||0)
+    }[sort];
+    return rows.sort(sorter);
+  }
+
+  function renderRows(){
+    const rows=filteredRows(); $('result-count').textContent=`顯示 ${rows.length} / ${state.data?.stocks?.length||0} 檔`;
+    if(!rows.length){$('tbody').innerHTML='<tr><td class="empty" colspan="12">沒有符合目前條件的股票</td></tr>';return}
+    $('tbody').innerHTML=rows.map((x,i)=>{
+      const moveClass=x.change>0?'up':x.change<0?'down':'';
+      const signal=x.priority?tag('★ 優先觀察','buy'):tag(`觀察 ${x.cond_count??0}/4`);
+      const volume=x.vol_surge?tag(`量增 ${x.vol_ratio||''}×`,'volume'):'';
+      const margin=x.margin_flag?tag(`融資${x.margin_flag}`,x.margin_flag==='大增'?'margin-up':'margin-down'):'';
+      const reason=x.reason?esc(x.reason):'<span class="metric-sub">尚無顯著量化誘因</span>';
+      return `<tr><td class="rank">${i+1}</td><td class="ticker">${esc(x.code)}<small>${esc(x.name)}</small></td><td class="num">${num(x.close,2)}</td><td class="num ${moveClass}">${signed(x.change_pct)}<small><br>${x.change>0?'+':''}${num(x.change,2)}</small></td><td class="num">${num(x.volume)} 張 ${volume}<small><br>${x.trade_value!=null?num(x.trade_value,2)+' 億':'—'}</small></td><td class="num ${x.trust_net>0?'up':x.trust_net<0?'down':''}">${x.trust_net==null?'待補':num(x.trust_net)+' 張'}</td><td>${esc(x.month_week||'待計算')}</td><td>${esc(x.kd||'待計算')}</td><td class="${x.outperform?'up':''}">${esc(x.relative||'待計算')}</td><td>${esc(x.margin||'待計算')} ${margin}</td><td>${signal}${chips(x.conditions)}</td><td><div class="reason">${reason}</div></td></tr>`;
+    }).join('');
+  }
+
+  async function loadData(){
+    const btn=$('reload');btn.disabled=true;btn.textContent='載入中…';$('loadmsg').textContent='正在讀取最新盤後資料';
+    try{const response=await fetch(`data/dashboard.json?v=${Date.now()}`,{cache:'no-store'});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();if(!Array.isArray(data.stocks))throw new Error('資料格式不符');state.data=data;renderSummary(data);renderRows();$('loadmsg').textContent=`已載入 ${new Date().toLocaleTimeString('zh-TW')}`}
+    catch(error){console.error(error);$('loadmsg').textContent='資料載入失敗，請稍後重試';$('tbody').innerHTML='<tr><td class="empty" colspan="12">無法讀取資料。請確認 GitHub Actions 已成功更新 dashboard.json。</td></tr>'}
+    finally{btn.disabled=false;btn.textContent='重新載入'}
+  }
+  ['search','signal','sort'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',renderRows));
+  $('reload').addEventListener('click',loadData);loadData();
+})();
+</script>
+</body>
+</html>

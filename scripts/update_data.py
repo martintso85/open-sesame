@@ -26,12 +26,12 @@ MI_MARGN_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date
 FMTQIK_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date={date}&response=json"
 STOCK_DAY_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date={date}&stockNo={code}&response=json"
 
-TOP_N = 200          # 清單保留檔數(沿用原本排序:漲幅、量)
-HISTORY_TOP = 30     # 前幾名加抓歷史K線計算技術指標
+TOP_N = int(os.getenv("TOP_N", "200"))  # 清單保留檔數
+HISTORY_TOP = int(os.getenv("HISTORY_TOP", "30"))  # 可由 Actions 環境變數調整
 HISTORY_MONTHS = 3   # 個股歷史抓幾個月
 MARKET_MONTHS = 4    # 大盤歷史抓幾個月(60日均線需要)
 MARGIN_TREND_DAYS = 12   # 大盤融資趨勢往回抓幾個「日曆日」
-REQUEST_DELAY = 0.4  # 對 rwd 端點的禮貌延遲(秒)
+REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.4"))  # 對 rwd 端點的禮貌延遲(秒)
 
 VOL_SURGE_5 = 1.5    # 個股:今日量 >= 1.5 倍 5 日均量 → 量增
 VOL_SURGE_20 = 2.0   # 個股:今日量 >= 2.0 倍 20 日均量 → 量增
@@ -76,7 +76,11 @@ def roc_date(s):
 # ---------- 各資料來源 ----------
 
 def fetch_base_stocks():
-    """STOCK_DAY_ALL → 全部個股盤後行情(沿用原始欄位與排序)。"""
+    """STOCK_DAY_ALL → 上市普通股盤後行情。
+
+    候選排序使用漲幅百分比，再以成交金額與成交量破同分。原本用漲跌
+    金額排序會系統性偏向高價股，讓後續只計算前幾名技術指標的結果失真。
+    """
     data = fetch_json(STOCK_DAY_ALL_URL)
     if not data:
         return None
@@ -88,8 +92,11 @@ def fetch_base_stocks():
             close = to_float(x.get("ClosingPrice", "0")) or 0
             open_ = to_float(x.get("OpeningPrice", "0")) or 0
             volume = (to_float(x.get("TradeVolume", "0")) or 0) / 1000  # 張
+            trade_value = (to_float(x.get("TradeValue", "0")) or 0) / 1e8  # 億元
             change = to_float(x.get("Change", "0")) or 0
-            if not code or not name or close <= 0:
+            # 台股普通股為 4 位純數字；排除 ETF、ETN、權證與特殊證券。
+            if (len(code) != 4 or not code.isdigit() or code.startswith("0")
+                    or not name or close <= 0):
                 continue
             prev = close - change
             stocks.append({
@@ -98,12 +105,16 @@ def fetch_base_stocks():
                 "close": close,
                 "open": open_,
                 "volume": round(volume, 2),
+                "trade_value": round(trade_value, 2),
                 "change": change,
                 "change_pct": round(change / prev * 100, 2) if prev > 0 else 0,
             })
         except Exception:
             continue
-    stocks.sort(key=lambda s: (s["change"], s["volume"]), reverse=True)
+    stocks.sort(
+        key=lambda s: (s["change_pct"], s["trade_value"], s["volume"]),
+        reverse=True,
+    )
     return stocks[:TOP_N]
 
 
@@ -407,7 +418,7 @@ def main():
             with open(OUT_PATH, encoding="utf-8") as f:
                 old = json.load(f)
             stocks = [{k: s.get(k) for k in
-                       ("code", "name", "close", "volume", "change", "change_pct")}
+                       ("code", "name", "close", "volume", "trade_value", "change", "change_pct")}
                       for s in old.get("stocks", [])]
         except Exception:
             stocks = []
@@ -487,8 +498,16 @@ def main():
     if trust is None:
         print("[warn] T86 unavailable → 投信欄位標示待補")
     result = {
+        "schema_version": 2,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        "data_date": market.get("date") if market else trust_date,
         "trust_date": trust_date,
+        "methodology": {
+            "universe": "TWSE 上市普通股",
+            "candidate_rank": "單日漲幅百分比、成交金額、成交量",
+            "history_count": HISTORY_TOP,
+            "priority_conditions": ["月週線向上", "KD黃金交叉", "投信買超", "大盤轉強"],
+        },
         "market": {
             "source": "TWSE",
             "finance_today": margin_summary["balance"] * 100 if margin_summary else None,  # 相容舊欄位(百萬元)
